@@ -1,0 +1,1 @@
+SUBSYSTEM=="razer", MODE="0660", GROUP="plugdev"
