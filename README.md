@@ -2,7 +2,7 @@
 
 This is a driver for the Razer DeathAdder V2 Pro. It supports the HID protocol, and also provides a character device to expose the proprietary configuration protocol to userspace. It works over wireless and wired USB, but not over Bluetooth.
 
-We provide a minimal sample app to read the battery level.
+The app reads and outputs the battery charge level. It uses the InfluxDB line protocol format.
 
 # Usage
 
@@ -21,9 +21,26 @@ Configure udev.
     sudo udevadm control --reload-rules
     sudo udevadm trigger
 
+Install the app.
+
+    sudo cp app/razer_battery.py /usr/local/bin/
+
 Run the app.
 
-    python3 app/battery_level.py
+    razer_battery.py
+
+# Telegraf integration
+
+Add the following to `/etc/sudoers.d/telegraf`.
+
+    telegraf ALL=(root) NOPASSWD: /usr/local/bin/razer_battery.py
+
+Add the following to `/etc/telegraf/telegraf.d/razer.conf`.
+
+    [[inputs.exec]]
+      commands = ["sudo razer_battery.py"]
+      timeout = "5s"
+      data_format = "influx"
 
 # Hacking
 
