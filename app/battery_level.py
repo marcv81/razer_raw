@@ -1,3 +1,4 @@
+import os
 import time
 
 filename = "/dev/razer0"
@@ -11,11 +12,13 @@ def battery_level(filename):
     request[7] = 0x80
     request[88] = 0x85
     request = bytes(request)
-    with open(filename, "wb") as f:
-        f.write(request)
-    time.sleep(0.015)
-    with open(filename, "rb") as f:
-        response = f.read(90)
+    fd = os.open(filename, os.O_RDWR)
+    try:
+        os.write(fd, request)
+        time.sleep(0.015)
+        response = os.read(fd, 90)
+    finally:
+        os.close(fd)
     return "%d" % (100.0 * response[9] / 255.0)
 
 

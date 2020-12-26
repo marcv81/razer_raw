@@ -52,13 +52,8 @@ static int razer_next_minor(void);
 static ssize_t razer_read(struct file *file, char __user *buf, size_t count, loff_t *offset);
 static ssize_t razer_write(struct file *file, const char __user *buf, size_t count, loff_t *offset);
 
-enum razer_msg_dir
-{
-    RAZER_MSG_SEND,
-    RAZER_MSG_RECEIVE,
-};
-
-static ssize_t razer_control_msg(struct file *file, char *buf, enum razer_msg_dir dir);
+static ssize_t razer_check_params(char *msg, struct file *file, size_t count, loff_t *offset);
+static ssize_t razer_check_length(ssize_t length);
 
 /*
  * Driver and devices initialization. Performs the standard HID initialization
@@ -306,16 +301,14 @@ static int razer_next_minor(void)
 
 static ssize_t razer_read(struct file *file, char __user *buf, size_t count, loff_t *offset)
 {
+    int minor;
     char *data;
     ssize_t retval;
+    struct usb_device *usb_dev;
 
-    // Validates the read request.
-    if (*offset != 0 || count < RAZER_REPORT_LENGTH)
-    {
-        retval = -EIO;
-        pr_info("read failed: count=%ld, offset=%lld\n", count, *offset);
+    retval = razer_check_params("read", file, count, offset);
+    if (retval < 0)
         goto final_0;
-    }
 
     // Allocates memory for the response.
     data = kmalloc(RAZER_REPORT_LENGTH, GFP_KERNEL);
@@ -326,7 +319,11 @@ static ssize_t razer_read(struct file *file, char __user *buf, size_t count, lof
         goto final_0;
     }
 
-    retval = razer_control_msg(file, data, RAZER_MSG_RECEIVE);
+    minor = MINOR(file->f_path.dentry->d_inode->i_rdev);
+    usb_dev = razer_device[minor]->usb_dev;
+    retval = razer_check_length(usb_control_msg(usb_dev, usb_rcvctrlpipe(usb_dev, 0), HID_REQ_GET_REPORT,
+                                                USB_TYPE_CLASS | USB_RECIP_INTERFACE | USB_DIR_IN, RAZER_REPORT_VALUE,
+                                                RAZER_REPORT_INDEX, data, RAZER_REPORT_LENGTH, USB_CTRL_SET_TIMEOUT));
     if (retval < 0)
         goto final_1;
 
@@ -345,16 +342,14 @@ final_0:
 
 static ssize_t razer_write(struct file *file, const char __user *buf, size_t count, loff_t *offset)
 {
+    int minor;
     char *data;
     ssize_t retval;
+    struct usb_device *usb_dev;
 
-    // Validates the write request.
-    if (*offset != 0 || count != RAZER_REPORT_LENGTH)
-    {
-        retval = -EIO;
-        pr_info("write failed: count=%ld, offset=%lld\n", count, *offset);
+    retval = razer_check_params("write", file, count, offset);
+    if (retval < 0)
         goto final_0;
-    }
 
     // Allocates memory for the request.
     data = kmalloc(RAZER_REPORT_LENGTH, GFP_KERNEL);
@@ -373,7 +368,11 @@ static ssize_t razer_write(struct file *file, const char __user *buf, size_t cou
         goto final_1;
     }
 
-    retval = razer_control_msg(file, data, RAZER_MSG_SEND);
+    minor = MINOR(file->f_path.dentry->d_inode->i_rdev);
+    usb_dev = razer_device[minor]->usb_dev;
+    retval = razer_check_length(usb_control_msg(usb_dev, usb_sndctrlpipe(usb_dev, 0), HID_REQ_SET_REPORT,
+                                                USB_TYPE_CLASS | USB_RECIP_INTERFACE | USB_DIR_OUT, RAZER_REPORT_VALUE,
+                                                RAZER_REPORT_INDEX, data, RAZER_REPORT_LENGTH, USB_CTRL_SET_TIMEOUT));
 
 final_1:
     kfree(data);
@@ -381,49 +380,42 @@ final_0:
     return retval;
 }
 
-/*
- * USB communications.
- */
-
-static ssize_t razer_control_msg(struct file *file, char *buf, enum razer_msg_dir dir)
+static ssize_t razer_check_params(char *msg, struct file *file, size_t count, loff_t *offset)
 {
-    ssize_t len;
-    unsigned int minor, pipe;
-    struct usb_device *usb_dev;
-    uint8_t request, request_type;
-
-    minor = MINOR(file->f_path.dentry->d_inode->i_rdev);
-    usb_dev = razer_device[minor]->usb_dev;
-
-    switch (dir)
+    if (file->f_flags & O_NONBLOCK)
     {
-    case RAZER_MSG_RECEIVE:
-        pipe = usb_rcvctrlpipe(usb_dev, 0);
-        request = HID_REQ_GET_REPORT;
-        request_type = USB_TYPE_CLASS | USB_RECIP_INTERFACE | USB_DIR_IN;
-        break;
-
-    case RAZER_MSG_SEND:
-        pipe = usb_sndctrlpipe(usb_dev, 0);
-        request = HID_REQ_SET_REPORT;
-        request_type = USB_TYPE_CLASS | USB_RECIP_INTERFACE | USB_DIR_OUT;
-        break;
-    }
-
-    len = usb_control_msg(usb_dev, pipe, request, request_type, RAZER_REPORT_VALUE, RAZER_REPORT_INDEX, buf,
-                          RAZER_REPORT_LENGTH, USB_CTRL_SET_TIMEOUT);
-
-    if (len < 0)
-    {
-        pr_err("usb_control_msg error %ld\n", len);
-        return len;
-    }
-
-    if (len != RAZER_REPORT_LENGTH)
-    {
-        pr_err("usb_control_msg error (len=%ld)\n", len);
+        pr_info("%s failed: non-blocking not supported\n", msg);
         return -EIO;
     }
 
-    return len;
+    if (*offset != 0)
+    {
+        pr_info("%s failed: offset=%lld, expected 0\n", msg, *offset);
+        return -EIO;
+    }
+
+    if (count != RAZER_REPORT_LENGTH)
+    {
+        pr_info("%s failed: count=%ld, expected %d\n", msg, count, RAZER_REPORT_LENGTH);
+        return -EIO;
+    }
+
+    return 0;
+}
+
+static ssize_t razer_check_length(ssize_t length)
+{
+    if (length < 0)
+    {
+        pr_err("usb_control_msg error %ld\n", length);
+        return length;
+    }
+
+    if (length != RAZER_REPORT_LENGTH)
+    {
+        pr_err("usb_control_msg error: length=%ld, expected %d\n", length, RAZER_REPORT_LENGTH);
+        return -EIO;
+    }
+
+    return length;
 }
