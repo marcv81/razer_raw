@@ -5,21 +5,30 @@ import os
 import time
 
 
-def checksum(request):
-    value = 0
+def checksum(message):
+    result = 0
     for i in range(2, 88):
-        value ^= request[i]
-    request[88] = value
+        result ^= message[i]
+    return result
 
 
 def query(filename, request):
     fd = os.open(filename, os.O_RDWR)
     try:
-        os.write(fd, request)
-        time.sleep(0.010)
+        os.write(fd, bytes(request))
+        time.sleep(0.005)
         return os.read(fd, 90)
     finally:
         os.close(fd)
+
+
+def safe_query(filename, request):
+    response = query(filename, request)
+    assert response[0] == 0x02
+    assert response[88] == checksum(response)
+    for i in range(1, 8):
+        assert request[i] == response[i]
+    return response
 
 
 def battery_level(filename):
@@ -28,8 +37,8 @@ def battery_level(filename):
     request[5] = 0x02
     request[6] = 0x07
     request[7] = 0x80
-    checksum(request)
-    response = query(filename, bytes(request))
+    request[88] = checksum(request)
+    response = safe_query(filename, request)
     return int(100.0 * response[9] / 255.0)
 
 
@@ -38,8 +47,8 @@ def serial_number(filename):
     request[1] = 0x08
     request[5] = 0x16
     request[7] = 0x82
-    checksum(request)
-    response = query(filename, bytes(request))
+    request[88] = checksum(request)
+    response = safe_query(filename, request)
     result = []
     i = 8
     while i < 88 and response[i] != 0:
@@ -50,7 +59,9 @@ def serial_number(filename):
 
 if __name__ == "__main__":
     for filename in glob.glob("/dev/razer*"):
-        b = battery_level(filename)
-        sn = serial_number(filename)
-        if b > 0 and len(sn) > 0:
+        try:
+            b = battery_level(filename)
+            sn = serial_number(filename)
             print("razer,sn=%s battery=%d" % (sn, b))
+        except AssertionError:
+            pass
