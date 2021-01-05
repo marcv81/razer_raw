@@ -6,6 +6,8 @@ The app reads and outputs the battery charge level. It uses the InfluxDB line pr
 
 # Usage
 
+## Driver
+
 Build the driver.
 
     make -C /lib/modules/$(uname -r)/build M=$(pwd)/driver modules
@@ -21,30 +23,36 @@ Configure udev.
     sudo udevadm control --reload-rules
     sudo udevadm trigger
 
+## App
+
+Build the app.
+
+    cd app/
+    cargo build --release
+
 Install the app.
 
-    sudo cp app/razer_battery.py /usr/local/bin/
-
-Run the app.
-
-    razer_battery.py
+    sudo cp target/release/razer-battery /usr/local/bin/
 
 # Telegraf integration
 
 Add the following to `/etc/sudoers.d/telegraf`.
 
-    telegraf ALL=(root) NOPASSWD: /usr/local/bin/razer_battery.py
+    telegraf ALL=(root) NOPASSWD: /usr/local/bin/razer-battery
 
 Add the following to `/etc/telegraf/telegraf.d/razer.conf`.
 
     [[inputs.exec]]
-      commands = ["sudo razer_battery.py"]
+      commands = ["sudo razer-battery"]
       timeout = "5s"
       data_format = "influx"
+
+Restart Telegraf.
+
+    sudo systemctl restart telegraf
 
 # Hacking
 
 Lint the code.
 
     clang-format -i --style=Microsoft driver/razer_raw.c
-    black app/
