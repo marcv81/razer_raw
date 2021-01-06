@@ -54,44 +54,58 @@ impl Message {
 }
 
 /// Reads the battery level from a device node.
-pub fn battery_level(file_name: &str) -> Result<u8, Box<dyn Error>> {
+pub fn battery_level(file_name: &str) -> u8 {
+    /// Parses a response for the battery level.
+    /// Converts from a value in the 0-255 range to a percentage.
+    fn parse_response(message: Message) -> u8 {
+        ((message.data[9] as f32) * 100.0 / 255.0) as u8
+    }
+
     let mut request = Message::new();
     request.data[1] = 0x1f;
     request.data[5] = 0x02;
     request.data[6] = 0x07;
     request.data[7] = 0x80;
     request.data[88] = request.checksum();
-    let response = request.query(file_name, 5)?;
-    // Convert from a value in the 0-255 range to a percentage.
-    let result = ((response.data[9] as f32) * 100.0 / 255.0) as u8;
-    Ok(result)
+    let response = request.query(file_name, 5);
+    return match response {
+        Ok(message) => parse_response(message),
+        Err(_) => 0,
+    };
 }
 
 /// Reads the serial number from a device node.
-pub fn serial_number(file_name: &str) -> Result<String, Box<dyn Error>> {
+pub fn serial_number(file_name: &str) -> String {
+    /// Parses a response for the serial number.
+    fn parse_response(message: Message) -> String {
+        let mut result = String::new();
+        let mut i = 8;
+        while message.data[i] != 0 {
+            result.push(message.data[i] as char);
+            i += 1;
+        }
+        result
+    }
+
     let mut request = Message::new();
     request.data[1] = 0x08;
     request.data[5] = 0x16;
     request.data[7] = 0x82;
     request.data[88] = request.checksum();
-    let response = request.query(file_name, 5)?;
-    // Parse the response for the serial number.
-    let mut result = String::new();
-    let mut i = 8;
-    while response.data[i] != 0 {
-        result.push(response.data[i] as char);
-        i += 1;
+    let response = request.query(file_name, 5);
+    match response {
+        Ok(message) => parse_response(message),
+        Err(_) => String::new(),
     }
-    Ok(result)
-}
-
-/// Checks if a strings starts with the specified prefix.
-fn starts_with(s: &str, prefix: &str) -> bool {
-    return s.len() >= prefix.len() && s[..prefix.len()] == *prefix;
 }
 
 /// Returns the list of device nodes.
 pub fn file_names() -> Result<Vec<String>, Box<dyn Error>> {
+    /// Checks if a string starts with the specified prefix.
+    fn starts_with(s: &str, prefix: &str) -> bool {
+        return s.len() >= prefix.len() && s[..prefix.len()] == *prefix;
+    }
+
     let mut result: Vec<String> = Vec::new();
     for entry in std::fs::read_dir("/dev")? {
         let path = entry?.path();
