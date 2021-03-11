@@ -8,6 +8,8 @@ The app reads and outputs the battery charge level. It uses the InfluxDB line pr
 
 ## Driver
 
+### Manual installation
+
 Build the driver.
 
     make -C /lib/modules/$(uname -r)/build M=$(pwd)/driver modules
@@ -15,7 +17,15 @@ Build the driver.
 Install the driver.
 
     sudo cp driver/razer_raw.ko /lib/modules/$(uname -r)/kernel/drivers/hid/
-    sudo depmod
+
+### DKMS installation
+
+    sudo cp -R driver/ /usr/src/razer_raw-1.0
+    sudo dkms add -m razer_raw -v 1.0
+    sudo dkms build -m razer_raw -v 1.0
+    sudo dkms install -m razer_raw -v 1.0
+
+### Configuration
 
 Configure udev.
 
