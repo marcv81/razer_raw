@@ -1,8 +1,10 @@
 # Intro
 
-This is a driver for the Razer DeathAdder V2 Pro. It supports the HID protocol, and also provides a character device to expose the proprietary configuration protocol to userspace. It works over wireless and wired USB, but not over Bluetooth.
+This is a driver for the Razer DeathAdder V2 Pro. It supports the HID protocol, and also provides a character device to expose the proprietary configuration protocol to user space. It works over wireless and wired USB, but not over Bluetooth.
 
 The app reads and outputs the battery charge level. It uses the InfluxDB line protocol format.
+
+For a full-featured kernel space driver, [OpenRazer](https://openrazer.github.io/) now supports the DeathAdder V2 Pro.
 
 # Usage
 
